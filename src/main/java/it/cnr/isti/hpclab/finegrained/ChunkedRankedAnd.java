@@ -24,6 +24,7 @@ public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
 	@Override
 	public long match(int from, int to) throws IOException 
 	{
+		TinyJProfiler.tic();
 		final List<MatchingEntry> enums = manager.enums;
 		final TopQueue heap = manager.heap;
 		final WeightingModel wm = manager.mWeightingModel;
@@ -56,6 +57,7 @@ public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
         		i = 1;
         	}
         }
+		TinyJProfiler.toc();
         return System.nanoTime() - start_time;
 	}
 }

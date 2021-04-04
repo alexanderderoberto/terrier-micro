@@ -1,8 +1,9 @@
 package it.cnr.isti.hpclab.finegrained;
 
 import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import org.terrier.structures.LexiconEntry;
 
 import it.cnr.isti.hpclab.MatchingConfiguration;
 import it.cnr.isti.hpclab.MatchingConfiguration.Property;
@@ -10,51 +11,66 @@ import it.cnr.isti.hpclab.matching.structures.QueryProperties.RuntimeProperty;
 import it.cnr.isti.hpclab.matching.structures.Result;
 import it.cnr.isti.hpclab.matching.structures.SearchRequest;
 import it.cnr.isti.hpclab.matching.structures.TopQueue;
+import it.cnr.isti.hpclab.matching.structures.query.QueryTerm;
 import it.unimi.dsi.fastutil.PriorityQueue;
 
 public class FineGrainedSearchRequest {
 	// If srq is null, this message is a "poison pill", and the thread receiving it must terminate.
 	public final SearchRequest srq;
-	private List<SkipList> mSkipLists;
-	private List<IntersectionTask> mIntersectionTasks;
+	public ArrayList<QueryTerm> terms; //Accessed concurrently by many threads, but read only!
+	public ArrayList<LexiconEntry> lexicons; //Accessed concurrently by many threads, but read only!
+	protected final int numberOfTasks;
+	/** Array used to contain intersection tasks */
+	private IntersectionTask[] mIntersectionTasks;
+	/** Used to insert intersection tasks into correct positions in the array */
+	private int intersectionTastPointer;
 	private AtomicInteger tasksCompleted;
+	
 	private long start_time;
 	
 	public long processingTime;
 	public long processedPostings;
 	public float initialThreshold;
 	
-	private int mIntersectionTasksCreated;
-	
-	public FineGrainedSearchRequest(final SearchRequest srq)
+	public FineGrainedSearchRequest(final SearchRequest srq, ArrayList<QueryTerm> terms, ArrayList<LexiconEntry> lexicons, int numberOfTasks)
 	{
+		TinyJProfiler.tic();
+		
+		this.start_time = System.nanoTime();
+		
 		this.srq = srq;
-		this.mSkipLists = new ArrayList();
-		this.mIntersectionTasks = new ArrayList<IntersectionTask>();
+		this.terms = terms;
+		this.lexicons = lexicons;
+		this.numberOfTasks = numberOfTasks;
+		
+		this.mIntersectionTasks = new IntersectionTask[numberOfTasks];
+		this.intersectionTastPointer = 0;
 		this.tasksCompleted = new AtomicInteger();
 		
 		initialThreshold = parseFloat(srq.getQuery().getMetadata(RuntimeProperty.INITIAL_THRESHOLD));
 		
 		this.processedPostings = 0l;
+		TinyJProfiler.toc();
 	}
 	
 	public void addIntersectionTask(IntersectionTask task){
-		mIntersectionTasks.add(task);
+		TinyJProfiler.tic();
+		mIntersectionTasks[intersectionTastPointer++] = task;
+		TinyJProfiler.toc();
 	}
 	
 	public long getProcessingTime(){
 		return processingTime;
 	}
 	
-	public List<SkipList> getSkipLists() {
-		return mSkipLists;
-	}
-	
 	public boolean isCompleted(){
-		if(tasksCompleted.incrementAndGet() == mSkipLists.get(0).size()){
+		TinyJProfiler.tic();
+		if(tasksCompleted.incrementAndGet() == numberOfTasks){
 			processingTime = System.nanoTime() - start_time;
+			TinyJProfiler.toc();
 			return true;
 		}
+		TinyJProfiler.toc();
 		return false;
 	}
 	
@@ -65,28 +81,22 @@ public class FineGrainedSearchRequest {
 	
 	//TODO: provare ad usare un solo heap da tutti i thread in modalità concorrente (quindi senza merge finale)
 	public TopQueue merge(){
-		ArrayList<Integer> tempArray = new ArrayList();
+		TinyJProfiler.tic();
 		
 		TopQueue heap = new TopQueue(MatchingConfiguration.getInt(Property.TOP_K));
 		PriorityQueue<Result> currentTasksQ;
-		for(int i=0; i<mIntersectionTasks.size(); i++){
-			//Incremento il numero di postings analizzati
-			processedPostings += mIntersectionTasks.get(i).processedPostings;
+		for(int i=0; i<numberOfTasks; i++){
+			// Sum up the number of processed postings
+			processedPostings += mIntersectionTasks[i].processedPostings;
 			
-			// Unisco i heap in uno
-			currentTasksQ = mIntersectionTasks.get(i).getHeap().top();
+			// Merge heaps
+			currentTasksQ = mIntersectionTasks[i].heap.top();
 			while(!currentTasksQ.isEmpty()){
-				//Inizio eliminazione doppioni temporanea
-				Result r = currentTasksQ.dequeue();
-				if(!tempArray.contains(r.getDocId())){
-					tempArray.add(r.getDocId());
-					heap.insert(r);
-				}
-				//Fine eliminazione doppioni temporanea
-				//TODO: eliminare ciò che sta su e decommentare la riga sotto
-				//heap.insert(currentTasksQ.dequeue());
+				heap.insert(currentTasksQ.dequeue());
 			}
 		}
+		
+		TinyJProfiler.toc();
 		return heap;
 	}
 
@@ -95,32 +105,5 @@ public class FineGrainedSearchRequest {
 		if (s == null)
 			return 0.0f;
 		return Float.parseFloat(s);
-	}
-	
-	// Adds skip lists to the request data structure in ordered manner (by skip list's lenght)
-	public void putSkipList(int index, SkipList newList) {
-		for(int i=0; i<mSkipLists.size(); i++) {
-			if(mSkipLists.get(i).size() >= newList.size()) {
-				mSkipLists.add(i, newList);
-				return;
-			}
-		}
-		mSkipLists.add(newList);
-	}
-	
-	public void startTime(){
-		this.start_time = System.nanoTime();
-	}
-	
-	public String toString() {
-		StringBuilder sb = new StringBuilder();
-		sb.append("Skip lists: (");
-		for(SkipList skipList: mSkipLists) {
-			sb.append(skipList.size() + ", ");
-		}
-		sb.setLength(sb.length() - 2);
-		sb.append(")\n");
-		sb.append("Intersection tasks: "+mIntersectionTasks.size());
-		return sb.toString();
 	}
 }

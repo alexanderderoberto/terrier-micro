@@ -1,10 +1,9 @@
 package it.cnr.isti.hpclab.finegrained;
 
 import java.io.IOException;
-import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
-import java.util.concurrent.ConcurrentHashMap;
 
 import org.apache.log4j.Logger;
 import org.terrier.structures.Index;
@@ -12,11 +11,8 @@ import org.terrier.structures.IndexOnDisk;
 import org.terrier.structures.LexiconEntry;
 import org.terrier.structures.postings.IterablePosting;
 
-import it.cnr.isti.hpclab.ef.structures.EFLexiconEntry;
-import it.cnr.isti.hpclab.finegrained.BoundedMatchingEntry;
 import it.cnr.isti.hpclab.MatchingConfiguration;
 import it.cnr.isti.hpclab.MatchingConfiguration.Property;
-import it.cnr.isti.hpclab.manager.MatchingEntry;
 import it.cnr.isti.hpclab.matching.structures.SearchRequest;
 import it.cnr.isti.hpclab.matching.structures.query.QueryParserException;
 import it.cnr.isti.hpclab.matching.structures.query.QuerySource;
@@ -32,18 +28,18 @@ public class FineGrainedParallelQuerying
 	private static final Logger LOGGER = Logger.getLogger(FineGrainedParallelQuerying.class);
 	protected static boolean IGNORE_LOW_IDF_TERMS = MatchingConfiguration.getBoolean(Property.IGNORE_LOW_IDF_TERMS);
 	
-	protected static int FINE_GRAINED_GRANULARITY = 256;//TODO: spostare in properties
+	protected static int TASKS_PER_THREAD = 4;//TODO: spostare in properties
+	/** Documents indexed by this index */
+	protected final long numDocsInIndex;
 	
 	/** The number of matched queries. */
-	protected int mMatchingQueryCount = 0;
+	protected int mMatchingQueryCount = 0;//TODO: aggiustare
 	
 	/** Data structures */
 	protected IndexOnDisk  mIndex;
 	private QuerySource  mQuerySource;
 	
 	// to be shared
-	protected BlockingQueue<FineGrainedSearchRequest> sSearchRequestQueue;//TODO: controllare se viene utilizzata
-	//protected ConcurrentHashMap<Integer, SearchRequest> sPendingSearchRequestMap;//TODO: togliere
 	protected BlockingQueue<IntersectionTask> sIntersectionTaskQueue;
 	protected BlockingQueue<SearchRequestMessage> sResultQueue;
 	
@@ -51,25 +47,18 @@ public class FineGrainedParallelQuerying
 	private final int mNumThreads;
 	private ObjectList<Thread> mThreads;
 	
-	//DEBUG
-	static long timeA = 0;
-	static long timeB = 0;
-	static long timeC = 0;
-	// /DEBUG
-	
-	public FineGrainedParallelQuerying() 
-	{
+	public FineGrainedParallelQuerying(){
+		TinyJProfiler.tic();
+		
 		mIndex = createIndex();
+		numDocsInIndex = mIndex.getCollectionStatistics().getNumberOfDocuments();
 		
 		mQuerySource = createQuerySource();
-
-		sSearchRequestQueue = new ArrayBlockingQueue<FineGrainedSearchRequest>(1 << 10);
-		//sPendingSearchRequestMap = new ConcurrentHashMap<Integer, SearchRequest>();//params: query Id, ?
+		
 		sIntersectionTaskQueue = new ArrayBlockingQueue<IntersectionTask>(1 << 10);
 		sResultQueue = new ArrayBlockingQueue<SearchRequestMessage>(1 << 10);
 
 		mNumThreads = Runtime.getRuntime().availableProcessors();
-		
 		mThreads = new ObjectArrayList<Thread>(mNumThreads + 1);
 		
 		Thread th;
@@ -81,28 +70,34 @@ public class FineGrainedParallelQuerying
 		th = new ResultOutputThread(sResultQueue, mNumThreads);
 		mThreads.add(th);
 		th.start();
+		
+		TinyJProfiler.toc();
 	}
 	
-	public static IndexOnDisk createIndex()
-	{
+	public static IndexOnDisk createIndex(){
 		return Index.createIndex();
 	}
 	
 	private static QuerySource createQuerySource() 
 	{
+		TinyJProfiler.tic();
 		try {
 			String querySourceClassName =  MatchingConfiguration.get(Property.QUERY_SOURCE_CLASSNAME);
 			if (querySourceClassName.indexOf('.') == -1)
 				querySourceClassName = MatchingConfiguration.get(Property.DEFAULT_NAMESPACE) + querySourceClassName;
-			return (QuerySource) (Class.forName(querySourceClassName).asSubclass(QuerySource.class).getConstructor().newInstance());
+			QuerySource tictoc = (QuerySource) (Class.forName(querySourceClassName).asSubclass(QuerySource.class).getConstructor().newInstance());
+			TinyJProfiler.toc();
+			return tictoc;
 		} catch (Exception e) {
 			e.printStackTrace();
+			TinyJProfiler.toc();
 			return null;
 		}
 	}
 	
-	public void processQueries() throws IOException, QueryParserException 
-	{
+	public void processQueries() throws IOException, QueryParserException {
+		TinyJProfiler.tic();
+		
 		mQuerySource.reset();
 
 		final long startTime = System.currentTimeMillis();
@@ -134,79 +129,87 @@ public class FineGrainedParallelQuerying
 					" queries in " + ((System.currentTimeMillis() - startTime) / 1000.0d) +
 					" seconds");
 					
-		LOGGER.info("createSkipList timeA: " + ((timeA) / 1000.0d) + " seconds, timeB: " + ((timeB - timeA) / 1000.0d) + " seconds, timeC: " + ((timeC) / 1000.0d) + " seconds");
+		TinyJProfiler.toc();
+		TinyJProfiler.close();
 	}
 	
-	public void processQuery(final int queryId, final String query, final float threshold) throws IOException, QueryParserException
-	{
+	public void processQuery(final int queryId, final String query, final float threshold) throws IOException, QueryParserException {
+		TinyJProfiler.tic();
 		try {
 			LOGGER.info("Opening query " + queryId + " : " + query);
 			
-			FineGrainedSearchRequest fgsr = new FineGrainedSearchRequest(new SearchRequest(queryId, query));
-			final int num_docs = mIndex.getCollectionStatistics().getNumberOfDocuments();
-			
-			//COMM: creo una skipList per ogni termine della query
-			int skipNumber = 0;
-			
-			long startTimeB = System.currentTimeMillis();
-			
-			for (QueryTerm queryTerm: fgsr.srq.getQueryTerms()) {
+			// Find the term with shortest skip list
+			SearchRequest srq = new SearchRequest(queryId, query);
+			int numberOfPointers = Integer.MAX_VALUE;
+			LexiconEntry shortestTermLE = null;
+			ArrayList<QueryTerm> importantTerms = new ArrayList<QueryTerm>();
+			ArrayList<LexiconEntry> importantLE = new ArrayList<LexiconEntry>();
+			for (QueryTerm queryTerm: srq.getQueryTerms()) {
 				LexiconEntry le = mIndex.getLexicon().getLexiconEntry(queryTerm.getQueryTerm());
 				if (le == null) {
 					LOGGER.warn("Term not found in index: " + queryTerm.getQueryTerm());
-				} else if (IGNORE_LOW_IDF_TERMS && le.getFrequency() > num_docs) {
+				} else if (IGNORE_LOW_IDF_TERMS && le.getFrequency() > numDocsInIndex) {
 					LOGGER.warn("Term " + queryTerm.getQueryTerm() + " has low idf - ignored from scoring.");
 				} else {
-					fgsr.putSkipList(skipNumber, createSkipList(mIndex, queryTerm));
+					importantTerms.add(queryTerm);
+					importantLE.add(le);
+					int pointers = SkipsReader.numberOfPointers((IndexOnDisk)mIndex, le);
+					if(pointers < numberOfPointers){
+						numberOfPointers = pointers;
+						shortestTermLE = le;
+					}
 				}
-				skipNumber++;
 			}
 			
-			timeB += System.currentTimeMillis() - startTimeB;
+			if(shortestTermLE == null)
+				return;
 			
-			fgsr.startTime();
+			// Count how many tasks we need
+			int numberOfTasks = mNumThreads * TASKS_PER_THREAD;
+			int step = (numberOfPointers + 1) / numberOfTasks;
+			if(step > 0){
+				int remainder = (numberOfPointers + 1) % numberOfTasks;
+				numberOfTasks += remainder / step;
+				if((remainder % step) != 0)
+					numberOfTasks++;
+			}
+			//TODO: aggiungere il caso (numberOfPointers + 1) / mNumThreads
+			else{
+				numberOfTasks = numberOfPointers + 1;
+				step = 1;
+			}
 			
-			int numRequired = 0;
-			List<SkipList> skipLists = fgsr.getSkipLists();
-			SkipList shortestList = skipLists.get(0);// Skip list più corta (in quanto sono ordinate per lunghezza durante l'inserimento in fgsrq)
-			int taskFrom = 0;
-			int taskTo = IterablePosting.END_OF_LIST;
+			FineGrainedSearchRequest fgsr = new FineGrainedSearchRequest(srq, importantTerms, importantLE, numberOfTasks);
 			
-			long startTimeC = System.currentTimeMillis();
+			// Get the list of first docIds of each skip
+			int[] blocks = createSkipList(mIndex, shortestTermLE, numberOfPointers + 1);
 			
-			for(int i=0; i<shortestList.size(); i++){
-				Skip ithSkip = shortestList.get(i);// Prendo l'i-esimo skip della lista più corta
-				IntersectionTask it = new IntersectionTask(fgsr, null, ithSkip.beginning, ithSkip.end);
+			// Create tasks for multi-thread processing
+			for(int i=0; i<(numberOfTasks - 1); i++){
+				IntersectionTask it = new IntersectionTask(fgsr, blocks[i * step], blocks[(i + 1) * step] - 1);
 				fgsr.addIntersectionTask(it);
 				sIntersectionTaskQueue.put(it);
 			}
+			IntersectionTask it = new IntersectionTask(fgsr, blocks[(numberOfTasks - 1) * step], IterablePosting.END_OF_LIST);
+			fgsr.addIntersectionTask(it);
+			sIntersectionTaskQueue.put(it);
 			
-			timeC += System.currentTimeMillis() - startTimeC;
-			
-			sSearchRequestQueue.put(fgsr);
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
+		TinyJProfiler.toc();
 	}
 	
-	public SkipList createSkipList(Index index, QueryTerm queryTerm) throws IOException {
-		long startTime = System.currentTimeMillis();
+	public int[] createSkipList(Index index, LexiconEntry le, int numberOfBlocks) throws IOException {
+		TinyJProfiler.tic();
 		
-		SkipList skipList = new SkipList(queryTerm);
-		
-		LexiconEntry le = index.getLexicon().getLexiconEntry(queryTerm.getQueryTerm());
 		SkipsReader sr = new SkipsReader((IndexOnDisk)index, le);
 		
-		long firstDocId = sr.next();
-		long lastDocId;
-		do{
-			lastDocId = sr.next();
-			skipList.add(new Skip((int)firstDocId, (int)lastDocId - 1));
-		}
-		while((firstDocId = lastDocId) != IterablePosting.END_OF_LIST);
-		
-		timeA += System.currentTimeMillis() - startTime;
-		
-		return skipList;
+		int[] blocks = new int[numberOfBlocks];
+		for(int i=0; i<numberOfBlocks; i++)
+			blocks[i] = (int)sr.next();
+			
+		TinyJProfiler.toc();
+		return blocks;
 	}
 }
