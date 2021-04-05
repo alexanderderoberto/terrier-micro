@@ -1,11 +1,9 @@
 package it.cnr.isti.hpclab.finegrained;
 
 import java.io.IOException;
-import java.util.Collections;
 
 import org.terrier.structures.Index;
 
-import it.cnr.isti.hpclab.manager.MatchingEntry;
 import it.cnr.isti.hpclab.matching.structures.ResultSet;
 import it.cnr.isti.hpclab.matching.structures.SearchRequest;
 import it.cnr.isti.hpclab.matching.structures.TopQueue;
@@ -28,16 +26,13 @@ public class RankedChunkManager extends ChunkManager{
 			TinyJProfiler.toc();
 			return new EmptyResultSet();
 		}
-		
-		Collections.sort(enums, MatchingEntry.SORT_BY_DOCID);
 	
 		processedPostings = 0L;
-		
 		heap = task.heap;
 		
 		mMatchingAlgorithm.match(task.fromDocId, task.toDocId);
 
-		close_enums();
+		//close_enums();
 		
 		task.processedPostings = processedPostings;
 		

@@ -2,6 +2,7 @@ package it.cnr.isti.hpclab.finegrained;
 
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -123,6 +124,10 @@ public abstract class ChunkManager {
 			return;
 		}
 		
+		if(lastQueryId != 0){
+			close_enums();//TODO: chiudere gli enums prima di terminare il thread
+		}
+		
 		lastQueryId = it.fgsrq.srq.getQueryId();
 		enums = new ObjectArrayList<MatchingEntry>();
 		
@@ -134,6 +139,8 @@ public abstract class ChunkManager {
 			if (it.fgsrq.terms.get(i).isRequired())
 				numRequired++;//COMM: capire dove si usa
 		}
+		
+		Collections.sort(enums, MatchingEntry.SORT_BY_DOCID);
 		
 		TinyJProfiler.toc();
 	}

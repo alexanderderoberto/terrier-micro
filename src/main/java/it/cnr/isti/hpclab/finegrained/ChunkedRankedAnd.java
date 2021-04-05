@@ -29,7 +29,8 @@ public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
 		final TopQueue heap = manager.heap;
 		final WeightingModel wm = manager.mWeightingModel;
 		
-		manager.reset_to(from);
+		//manager.reset_to(from);
+		enums.get(0).posting.next(from);
 		
 		long start_time = System.nanoTime();
         int currentDocid = enums.get(0).posting.getId();
