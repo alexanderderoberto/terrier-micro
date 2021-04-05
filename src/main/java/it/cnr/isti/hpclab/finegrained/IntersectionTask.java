@@ -24,8 +24,10 @@ public class IntersectionTask {
 		this.toDocId = toId;
 		this.processedPostings = 0L;
 		
+		/*
 		if(fgsrq != null)
 			this.heap = new TopQueue(MatchingConfiguration.getInt(Property.TOP_K), fgsrq.initialThreshold);
+		*/
 		
 		TinyJProfiler.toc();
 	}

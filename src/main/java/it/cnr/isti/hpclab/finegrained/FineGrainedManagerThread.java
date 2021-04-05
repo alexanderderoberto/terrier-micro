@@ -11,7 +11,6 @@ import it.cnr.isti.hpclab.MatchingConfiguration.Property;
 import it.cnr.isti.hpclab.annotations.Managed;
 import it.cnr.isti.hpclab.finegrained.ChunkManager;
 import it.cnr.isti.hpclab.matching.structures.QueryProperties.RuntimeProperty;
-import it.cnr.isti.hpclab.matching.structures.TopQueue;
 import it.cnr.isti.hpclab.matching.structures.resultset.EmptyResultSet;
 import it.cnr.isti.hpclab.matching.structures.resultset.ScoredResultSet;
 import it.cnr.isti.hpclab.parallel.SearchRequestMessage;
@@ -22,7 +21,6 @@ public class FineGrainedManagerThread extends Thread
 	
 	// Private variables
 	private final ChunkManager mManager;
-	private TopQueue heap;
 	
 	// Private variables
 	private IndexOnDisk mIndex;
@@ -84,15 +82,15 @@ public class FineGrainedManagerThread extends Thread
 				mManager.run(it);
 				
 				if(it.fgsrq.isCompleted()){
-					heap = it.fgsrq.merge();
+					//heap = it.fgsrq.merge();
 					
 					mManager.stats(it.fgsrq.srq);//TODO: sistemare in modo elegante
 					addFinalStats(it.fgsrq);
 					
-					if (heap.isEmpty())
+					if (it.fgsrq.heap.isEmpty())
 						it.fgsrq.srq.setResultSet(new EmptyResultSet());
 					else
-						it.fgsrq.srq.setResultSet(new ScoredResultSet(heap));
+						it.fgsrq.srq.setResultSet(new ScoredResultSet(it.fgsrq.heap.getQueue()));
 						
 					sResultQueue.put(new SearchRequestMessage(it.fgsrq.srq));
 				}
@@ -109,9 +107,9 @@ public class FineGrainedManagerThread extends Thread
 	
 	private void addFinalStats(final FineGrainedSearchRequest fgsrq){
 		TinyJProfiler.tic();
-        fgsrq.srq.getQuery().addMetadata(RuntimeProperty.FINAL_THRESHOLD,    Float.toString(heap.threshold()));
+        fgsrq.srq.getQuery().addMetadata(RuntimeProperty.FINAL_THRESHOLD,    Float.toString(fgsrq.heap.threshold()));
         fgsrq.srq.getQuery().addMetadata(RuntimeProperty.INITIAL_THRESHOLD,  Float.toString(fgsrq.initialThreshold));
-		fgsrq.srq.getQuery().addMetadata(RuntimeProperty.NUM_RESULTS, 	     Integer.toString(heap.size()));
+		fgsrq.srq.getQuery().addMetadata(RuntimeProperty.NUM_RESULTS, 	     Integer.toString(fgsrq.heap.size()));
 		fgsrq.srq.getQuery().addMetadata(RuntimeProperty.PROCESSED_POSTINGS, Long.toString(fgsrq.processedPostings));
 		fgsrq.srq.getQuery().addMetadata(RuntimeProperty.PROCESSING_TIME,    Double.toString(fgsrq.getProcessingTime()/1e6));
 		TinyJProfiler.toc();

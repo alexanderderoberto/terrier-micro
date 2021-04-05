@@ -5,7 +5,6 @@ import it.cnr.isti.hpclab.finegrained.ChunkManager;
 import it.cnr.isti.hpclab.finegrained.RankedChunkManager;
 import it.cnr.isti.hpclab.manager.MatchingEntry;
 import it.cnr.isti.hpclab.matching.structures.Result;
-import it.cnr.isti.hpclab.matching.structures.TopQueue;
 import it.cnr.isti.hpclab.matching.structures.WeightingModel;
 
 import java.io.IOException;
@@ -26,7 +25,7 @@ public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
 	{
 		TinyJProfiler.tic();
 		final List<MatchingEntry> enums = manager.enums;
-		final TopQueue heap = manager.heap;
+		final ConcurrentTopQueue heap = manager.heap;
 		final WeightingModel wm = manager.mWeightingModel;
 		
 		//manager.reset_to(from);

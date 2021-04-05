@@ -10,7 +10,6 @@ import it.cnr.isti.hpclab.MatchingConfiguration.Property;
 import it.cnr.isti.hpclab.matching.structures.QueryProperties.RuntimeProperty;
 import it.cnr.isti.hpclab.matching.structures.Result;
 import it.cnr.isti.hpclab.matching.structures.SearchRequest;
-import it.cnr.isti.hpclab.matching.structures.TopQueue;
 import it.cnr.isti.hpclab.matching.structures.query.QueryTerm;
 import it.unimi.dsi.fastutil.PriorityQueue;
 
@@ -24,6 +23,8 @@ public class FineGrainedSearchRequest {
 	private IntersectionTask[] mIntersectionTasks;
 	/** Used to insert intersection tasks into correct positions in the array */
 	private int intersectionTastPointer;
+	/** Used to store the results */
+	public final ConcurrentTopQueue heap;
 	private AtomicInteger tasksCompleted;
 	
 	private long start_time;
@@ -45,9 +46,9 @@ public class FineGrainedSearchRequest {
 		
 		this.mIntersectionTasks = new IntersectionTask[numberOfTasks];
 		this.intersectionTastPointer = 0;
-		this.tasksCompleted = new AtomicInteger();
-		
 		initialThreshold = parseFloat(srq.getQuery().getMetadata(RuntimeProperty.INITIAL_THRESHOLD));
+		this.heap = new ConcurrentTopQueue(MatchingConfiguration.getInt(Property.TOP_K), initialThreshold);
+		this.tasksCompleted = new AtomicInteger();
 		
 		this.processedPostings = 0l;
 		TinyJProfiler.toc();
@@ -80,6 +81,7 @@ public class FineGrainedSearchRequest {
 	}
 	
 	//TODO: provare ad usare un solo heap da tutti i thread in modalità concorrente (quindi senza merge finale)
+	/*
 	public TopQueue merge(){
 		TinyJProfiler.tic();
 		
@@ -99,6 +101,7 @@ public class FineGrainedSearchRequest {
 		TinyJProfiler.toc();
 		return heap;
 	}
+	*/
 
 	public static float parseFloat(String s)
 	{

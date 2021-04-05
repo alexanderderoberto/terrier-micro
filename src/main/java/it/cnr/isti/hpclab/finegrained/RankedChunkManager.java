@@ -6,11 +6,10 @@ import org.terrier.structures.Index;
 
 import it.cnr.isti.hpclab.matching.structures.ResultSet;
 import it.cnr.isti.hpclab.matching.structures.SearchRequest;
-import it.cnr.isti.hpclab.matching.structures.TopQueue;
 import it.cnr.isti.hpclab.matching.structures.resultset.EmptyResultSet;
 
 public class RankedChunkManager extends ChunkManager{
-	public TopQueue heap;
+	public ConcurrentTopQueue heap;
 
 	public RankedChunkManager(Index index) {
 		super(index);
@@ -28,7 +27,7 @@ public class RankedChunkManager extends ChunkManager{
 		}
 	
 		processedPostings = 0L;
-		heap = task.heap;
+		heap = task.fgsrq.heap;
 		
 		mMatchingAlgorithm.match(task.fromDocId, task.toDocId);
 
