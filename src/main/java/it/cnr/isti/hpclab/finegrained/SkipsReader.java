@@ -16,6 +16,8 @@ import org.terrier.structures.Pointer;
 import org.terrier.structures.postings.IterablePosting;
 
 public class SkipsReader{
+	/** The number of pointers to jump at each next() call */
+	protected final int step;
 	/** Log2 of the number of zeros each "upper bits" portion contains */
 	protected final int log2Quantum;
 	/** Content of the index, encoded with Elias Fano*/
@@ -42,8 +44,10 @@ public class SkipsReader{
 	private long currentDocIdIndex;
 	
 	
-	public SkipsReader(final IndexOnDisk index, final Pointer pointer) throws IOException{
+	public SkipsReader(final IndexOnDisk index, final Pointer pointer, final int step) throws IOException{
 		TinyJProfiler.tic();
+		this.step = step;
+		
 		/** The number of documents that this entry occurs in */
 		final int numDocuments = ((EFLexiconEntry)pointer).getDocumentFrequency();
 		/** Upper bound on the number of documents */
@@ -104,13 +108,15 @@ public class SkipsReader{
 			
 		final long precedingZeroes = block << log2Quantum; //precedingZeroes: number of zeros that preceding blocks must contain (i.e. decompressed value of the first element in the actual block)
 		
-		if(block++ == 0){
+		if(block == 0){
 			long tictoc = getNextUpperBits(upperBitsStart) << lbSize | lowerBits.extract();
+			block += step;
 			TinyJProfiler.toc();
 			return tictoc;
 		}
 		else{
-			final long skip = skipPointers.extract(skipPointersStart + (block - 2) * pointerSize); //skip: bit offset of the beginning of the "block"-th block w.r.t upperBitsStart
+			final long skip = skipPointers.extract(skipPointersStart + (block - 1) * pointerSize); //skip: bit offset of the beginning of the "block"-th block w.r.t upperBitsStart
+			block += step;
 			assert skip != 0;
 			currentDocIdIndex = skip - precedingZeroes;//currentDocIdIndex: the number of documents indexed by all the preceding blocks
 			long tictoc = getNextUpperBits(upperBitsStart + skip) << lbSize | lowerBits.extract(lowerBitsStart + lbSize * currentDocIdIndex);

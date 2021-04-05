@@ -173,7 +173,6 @@ public class FineGrainedParallelQuerying
 				if((remainder % step) != 0)
 					numberOfTasks++;
 			}
-			//TODO: aggiungere il caso (numberOfPointers + 1) / mNumThreads
 			else{
 				numberOfTasks = numberOfPointers + 1;
 				step = 1;
@@ -182,15 +181,14 @@ public class FineGrainedParallelQuerying
 			FineGrainedSearchRequest fgsr = new FineGrainedSearchRequest(srq, importantTerms, importantLE, numberOfTasks);
 			
 			// Get the list of first docIds of each skip
-			int[] blocks = createSkipList(mIndex, shortestTermLE, numberOfPointers + 1);
+			int[] blocks = createSkipList(mIndex, shortestTermLE, numberOfTasks, step);
 			
-			// Create tasks for multi-thread processing
 			for(int i=0; i<(numberOfTasks - 1); i++){
-				IntersectionTask it = new IntersectionTask(fgsr, blocks[i * step], blocks[(i + 1) * step] - 1);
+				IntersectionTask it = new IntersectionTask(fgsr, blocks[i], blocks[i + 1] - 1);
 				fgsr.addIntersectionTask(it);
 				sIntersectionTaskQueue.put(it);
 			}
-			IntersectionTask it = new IntersectionTask(fgsr, blocks[(numberOfTasks - 1) * step], IterablePosting.END_OF_LIST);
+			IntersectionTask it = new IntersectionTask(fgsr, blocks[(numberOfTasks - 1)], IterablePosting.END_OF_LIST);
 			fgsr.addIntersectionTask(it);
 			sIntersectionTaskQueue.put(it);
 			
@@ -200,10 +198,10 @@ public class FineGrainedParallelQuerying
 		TinyJProfiler.toc();
 	}
 	
-	public int[] createSkipList(Index index, LexiconEntry le, int numberOfBlocks) throws IOException {
+	public int[] createSkipList(Index index, LexiconEntry le, int numberOfBlocks, int step) throws IOException {
 		TinyJProfiler.tic();
 		
-		SkipsReader sr = new SkipsReader((IndexOnDisk)index, le);
+		SkipsReader sr = new SkipsReader((IndexOnDisk)index, le, step);
 		
 		int[] blocks = new int[numberOfBlocks];
 		for(int i=0; i<numberOfBlocks; i++)
