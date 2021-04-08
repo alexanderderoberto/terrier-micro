@@ -1,8 +1,8 @@
-package it.cnr.isti.hpclab.finegrained;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
 import it.cnr.isti.hpclab.annotations.Managed;
-import it.cnr.isti.hpclab.finegrained.ChunkManager;
-import it.cnr.isti.hpclab.finegrained.RankedChunkManager;
+import it.cnr.isti.hpclab.parallel.finegrained.ChunkManager;
+import it.cnr.isti.hpclab.parallel.finegrained.RankedChunkManager;
 import it.cnr.isti.hpclab.manager.MatchingEntry;
 import it.cnr.isti.hpclab.matching.structures.Result;
 import it.cnr.isti.hpclab.matching.structures.TopQueue;
@@ -11,7 +11,7 @@ import it.cnr.isti.hpclab.matching.structures.WeightingModel;
 import java.io.IOException;
 import java.util.List;
 
-@Managed(by = "it.cnr.isti.hpclab.finegrained.RankedChunkManager")
+@Managed(by = "it.cnr.isti.hpclab.parallel.finegrained.RankedChunkManager")
 public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
 	private RankedChunkManager manager;
 	
@@ -24,12 +24,10 @@ public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
 	@Override
 	public long match(int from, int to) throws IOException 
 	{
-		TinyJProfiler.tic();
 		final List<MatchingEntry> enums = manager.enums;
 		final TopQueue heap = manager.heap;
 		final WeightingModel wm = manager.mWeightingModel;
 		
-		//manager.reset_to(from);
 		enums.get(0).posting.next(from);
 		
 		long start_time = System.nanoTime();
@@ -58,7 +56,6 @@ public class ChunkedRankedAnd implements ChunkMatchingAlgorithm{
         		i = 1;
         	}
         }
-		TinyJProfiler.toc();
         return System.nanoTime() - start_time;
 	}
 }

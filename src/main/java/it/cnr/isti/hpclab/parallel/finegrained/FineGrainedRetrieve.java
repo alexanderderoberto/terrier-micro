@@ -1,4 +1,4 @@
-package it.cnr.isti.hpclab.finegrained;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
 import java.io.IOException;
 import java.util.Scanner;

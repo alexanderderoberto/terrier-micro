@@ -1,7 +1,8 @@
-package it.cnr.isti.hpclab.finegrained;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
 import java.io.IOException;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 
 import org.apache.log4j.Logger;
@@ -24,11 +25,8 @@ public class FineGrainedParallelQuerying
 	private static final Logger LOGGER = Logger.getLogger(FineGrainedParallelQuerying.class);
 	protected static boolean IGNORE_LOW_IDF_TERMS = MatchingConfiguration.getBoolean(Property.IGNORE_LOW_IDF_TERMS);
 	
-	/** Documents indexed by this index */
-	protected final long numDocsInIndex;
-	
 	/** The number of matched queries. */
-	protected int mMatchingQueryCount = 0;//TODO: aggiustare
+	protected int mMatchingQueryCount = 0;
 	
 	/** Data structures */
 	protected IndexOnDisk  mIndex;
@@ -38,39 +36,38 @@ public class FineGrainedParallelQuerying
 	protected BlockingQueue<SearchRequestMessage> sSearchRequestQueue;
 	protected BlockingQueue<IntersectionTask> sIntersectionTaskQueue;
 	protected BlockingQueue<SearchRequestMessage> sResultQueue;
+	protected Object splittersLock;
 	
 	// private
 	private final int mNumSplittingThreads;
 	private final int mNumComputingThreads;
 	private ObjectList<Thread> mThreads;
 	
-	public FineGrainedParallelQuerying(){
-		TinyJProfiler.tic();
-		
+	public FineGrainedParallelQuerying()
+	{
 		mIndex = createIndex();
-		numDocsInIndex = mIndex.getCollectionStatistics().getNumberOfDocuments();
-		
 		mQuerySource = createQuerySource();
 		
 		sSearchRequestQueue = new ArrayBlockingQueue<SearchRequestMessage>(1 << 10);
-		sIntersectionTaskQueue = new ArrayBlockingQueue<IntersectionTask>(1 << 10);
+		sIntersectionTaskQueue = new LinkedBlockingQueue<IntersectionTask>(1 << 10);
 		sResultQueue = new ArrayBlockingQueue<SearchRequestMessage>(1 << 10);
-
-		mNumSplittingThreads = Runtime.getRuntime().availableProcessors();
+		splittersLock = new Object();
+		
+		mNumSplittingThreads = 1;//Runtime.getRuntime().availableProcessors();
 		mNumComputingThreads = Runtime.getRuntime().availableProcessors();
 		mThreads = new ObjectArrayList<Thread>(mNumSplittingThreads + mNumComputingThreads + 1);
 		
 		Thread th;
 		// Create some threads to split incoming queries
 		for (int i = 0; i < mNumSplittingThreads; i++) {
-			th = new QuerySplittingThread(mIndex, sSearchRequestQueue, sIntersectionTaskQueue, mNumComputingThreads);
+			th = new QuerySplittingThread(sSearchRequestQueue, sIntersectionTaskQueue, splittersLock, mNumComputingThreads);
 			mThreads.add(th);
 			th.start();
 		}
 		
 		// Create some threads to process previously generated splits
 		for (int i = 0; i < mNumComputingThreads; i++) {
-			th = new FineGrainedManagerThread(sIntersectionTaskQueue, sResultQueue);
+			th = new FineGrainedManagerThread(sIntersectionTaskQueue, sResultQueue, splittersLock);
 			mThreads.add(th);
 			th.start();
 		}
@@ -79,34 +76,28 @@ public class FineGrainedParallelQuerying
 		th = new ResultOutputThread(sResultQueue, mNumComputingThreads);
 		mThreads.add(th);
 		th.start();
-		
-		TinyJProfiler.toc();
 	}
 	
-	public static IndexOnDisk createIndex(){
+	public static IndexOnDisk createIndex()
+	{
 		return Index.createIndex();
 	}
 	
 	private static QuerySource createQuerySource() 
 	{
-		TinyJProfiler.tic();
 		try {
 			String querySourceClassName =  MatchingConfiguration.get(Property.QUERY_SOURCE_CLASSNAME);
 			if (querySourceClassName.indexOf('.') == -1)
 				querySourceClassName = MatchingConfiguration.get(Property.DEFAULT_NAMESPACE) + querySourceClassName;
-			QuerySource tictoc = (QuerySource) (Class.forName(querySourceClassName).asSubclass(QuerySource.class).getConstructor().newInstance());
-			TinyJProfiler.toc();
-			return tictoc;
+			return (QuerySource) (Class.forName(querySourceClassName).asSubclass(QuerySource.class).getConstructor().newInstance());
 		} catch (Exception e) {
 			e.printStackTrace();
-			TinyJProfiler.toc();
 			return null;
 		}
 	}
 	
-	public void processQueries() throws IOException, QueryParserException {
-		TinyJProfiler.tic();
-		
+	public void processQueries() throws IOException, QueryParserException
+	{
 		mQuerySource.reset();
 
 		final long startTime = System.currentTimeMillis();
@@ -121,6 +112,7 @@ public class FineGrainedParallelQuerying
 				qth = ((ThresholdQuerySource) mQuerySource).getQueryThreshold();
 			
 			processQuery(qid, query, qth);
+			mMatchingQueryCount++;
 		}
 		
 		// notify processors that queries are over with a poison pill per processor
@@ -138,17 +130,14 @@ public class FineGrainedParallelQuerying
 					" queries in " + ((System.currentTimeMillis() - startTime) / 1000.0d) +
 					" seconds");
 					
-		TinyJProfiler.toc();
-		TinyJProfiler.close();
 	}
 	
-	public void processQuery(final int queryId, final String query, final float threshold) throws IOException, QueryParserException {
-		TinyJProfiler.tic();
+	public void processQuery(final int queryId, final String query, final float threshold) throws IOException, QueryParserException
+	{
 		try {
 			sSearchRequestQueue.put(new SearchRequestMessage(new SearchRequest(queryId, query)));
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
-		TinyJProfiler.toc();
 	}
 }

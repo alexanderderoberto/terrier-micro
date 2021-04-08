@@ -1,4 +1,4 @@
-package it.cnr.isti.hpclab.finegrained;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
 import it.cnr.isti.hpclab.MatchingConfiguration;
 import it.cnr.isti.hpclab.MatchingConfiguration.Property;
@@ -12,13 +12,13 @@ public class IntersectionTask {
 	public long processedPostings;
 	public TopQueue heap;
 	
-	public IntersectionTask(FineGrainedSearchRequest fgsrq) {
+	public IntersectionTask(FineGrainedSearchRequest fgsrq)
+	{
 		this(fgsrq, 0, 0);
 	}
 	
-	public IntersectionTask(FineGrainedSearchRequest fgsrq, int fromId, int toId) {
-		TinyJProfiler.tic();
-		
+	public IntersectionTask(FineGrainedSearchRequest fgsrq, int fromId, int toId)
+	{
 		this.fgsrq = fgsrq;
 		this.fromDocId = fromId;
 		this.toDocId = toId;
@@ -26,11 +26,10 @@ public class IntersectionTask {
 		
 		if(fgsrq != null)
 			this.heap = new TopQueue(MatchingConfiguration.getInt(Property.TOP_K), fgsrq.initialThreshold);
-		
-		TinyJProfiler.toc();
 	}
 	
-	public boolean isPoison() {
+	public boolean isPoison()
+	{
 		return this.fgsrq == null;
 	}
 }

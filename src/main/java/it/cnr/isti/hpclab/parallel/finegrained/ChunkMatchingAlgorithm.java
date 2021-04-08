@@ -1,6 +1,6 @@
-package it.cnr.isti.hpclab.finegrained;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
-import it.cnr.isti.hpclab.finegrained.ChunkManager;
+import it.cnr.isti.hpclab.parallel.finegrained.ChunkManager;
 
 import java.io.IOException;
 

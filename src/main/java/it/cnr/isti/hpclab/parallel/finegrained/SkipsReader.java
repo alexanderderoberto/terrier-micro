@@ -1,4 +1,4 @@
-package it.cnr.isti.hpclab.finegrained;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
 import it.cnr.isti.hpclab.ef.EliasFano;
 import it.cnr.isti.hpclab.ef.structures.EFLexiconEntry;
@@ -45,7 +45,6 @@ public class SkipsReader{
 	
 	
 	public SkipsReader(final IndexOnDisk index, final Pointer pointer, final int step) throws IOException{
-		TinyJProfiler.tic();
 		this.step = step;
 		
 		/** The number of documents that this entry occurs in */
@@ -78,58 +77,41 @@ public class SkipsReader{
 		
 		skipPointers = new LongWordBitReader(docidsList, pointerSize);
 		lowerBits = new LongWordBitReader(docidsList, lbSize);
-		TinyJProfiler.toc();
 	}
 	
 	private long getNextUpperBits(final long position){
-		/** The 64-bit buffer used to read the upper bits */
-		long window;
 		/** The pointer to the word (i.e. Long) in the docidsList. Used to read the upper bits. */
 		long curr;
 		
-		TinyJProfiler.tic();
-		window = docidsList.getLong(curr = position / Long.SIZE) & -1L << (int)(position);//COMM: a cosa serve questo shift?
+		long window = docidsList.getLong(curr = position / Long.SIZE) & -1L << (int)(position);
 		while (window == 0)
 			window = docidsList.getLong( ++curr );
 		
-		long lastUpperBits = curr * Long.SIZE + Long.numberOfTrailingZeros(window) - currentDocIdIndex++ - upperBitsStart;
-		window &= window - 1;
-		TinyJProfiler.toc();
-		return lastUpperBits;
+		return curr * Long.SIZE + Long.numberOfTrailingZeros(window) - currentDocIdIndex++ - upperBitsStart;
 	}
 	
 	/** Returns the first docId in the block being currently used. Increments the actual block at every call */
 	public long next(){
-		TinyJProfiler.tic();
-		if(block > numberOfPointers){
-			TinyJProfiler.toc();
+		if(block > numberOfPointers)
 			return IterablePosting.END_OF_LIST;
-		}
 			
 		final long precedingZeroes = block << log2Quantum; //precedingZeroes: number of zeros that preceding blocks must contain (i.e. decompressed value of the first element in the actual block)
 		
 		if(block == 0){
-			long tictoc = getNextUpperBits(upperBitsStart) << lbSize | lowerBits.extract();
 			block += step;
-			TinyJProfiler.toc();
-			return tictoc;
+			return getNextUpperBits(upperBitsStart) << lbSize | lowerBits.extract();
 		}
 		else{
 			final long skip = skipPointers.extract(skipPointersStart + (block - 1) * pointerSize); //skip: bit offset of the beginning of the "block"-th block w.r.t upperBitsStart
 			block += step;
 			assert skip != 0;
-			currentDocIdIndex = skip - precedingZeroes;//currentDocIdIndex: the number of documents indexed by all the preceding blocks
-			long tictoc = getNextUpperBits(upperBitsStart + skip) << lbSize | lowerBits.extract(lowerBitsStart + lbSize * currentDocIdIndex);
-			TinyJProfiler.toc();
-			return tictoc;
+			currentDocIdIndex = skip - precedingZeroes; //currentDocIdIndex: the number of documents indexed by all the preceding blocks
+			return getNextUpperBits(upperBitsStart + skip) << lbSize | lowerBits.extract(lowerBitsStart + lbSize * currentDocIdIndex);
 		}
 	}
 	
 	/** Returns the number of skip pointers for the term represented by the passed "Pointer" */
 	public static int numberOfPointers(final IndexOnDisk index, final Pointer pointer){
-		TinyJProfiler.tic();
-		int tictoc = (int)EFUtils.numberOfPointers(((EFLexiconEntry)pointer).getDocumentFrequency() + 1, index.getCollectionStatistics().getNumberOfDocuments(), index.getIntIndexProperty(EliasFano.LOG2QUANTUM, 0), false, true);
-		TinyJProfiler.toc();
-		return tictoc;
+		return (int)EFUtils.numberOfPointers(((EFLexiconEntry)pointer).getDocumentFrequency() + 1, index.getCollectionStatistics().getNumberOfDocuments(), index.getIntIndexProperty(EliasFano.LOG2QUANTUM, 0), false, true);
 	}
 }
