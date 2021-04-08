@@ -19,6 +19,7 @@ public class QuerySplittingThread extends Thread {
 	protected static final Logger LOGGER = Logger.getLogger(QuerySplittingThread.class);
 	protected static boolean IGNORE_LOW_IDF_TERMS = MatchingConfiguration.getBoolean(Property.IGNORE_LOW_IDF_TERMS);
 	protected static int TASKS_PER_THREAD = MatchingConfiguration.getInt(Property.TASKS_PER_THREAD);
+	protected static int TASKS_QUEUE_TRESHOLD = MatchingConfiguration.getInt(Property.TASKS_QUEUE_TRESHOLD);
 	
 	/** Number of ocuments indexed by this index */
 	protected final long numDocsInIndex;
@@ -123,8 +124,10 @@ public class QuerySplittingThread extends Thread {
 				fgsr.addIntersectionTask(it);
 				sIntersectionTaskQueue.put(it);
 				
-				synchronized(splittersLock){
-					splittersLock.wait();
+				if(sIntersectionTaskQueue.size() > TASKS_QUEUE_TRESHOLD){
+					synchronized(splittersLock){
+						splittersLock.wait();
+					}
 				}
 			}
 			

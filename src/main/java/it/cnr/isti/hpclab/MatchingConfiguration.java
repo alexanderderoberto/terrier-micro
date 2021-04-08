@@ -65,6 +65,9 @@ public class MatchingConfiguration
 	 	RESULTS_FILENAME          	("micro.results.filename",		"results.gz"),
 		
 	 	THRESHOLD_FILE     			("micro.queries.threshold",	""),
+		
+	 	TASKS_PER_THREAD     		("micro.finegrained.tasksperthread",	"1"),
+	 	TASKS_QUEUE_TRESHOLD     	("micro.finegrained.taskqueuetreshold",	"0"),
 
 	 	NULL						("null", "null");
 		  

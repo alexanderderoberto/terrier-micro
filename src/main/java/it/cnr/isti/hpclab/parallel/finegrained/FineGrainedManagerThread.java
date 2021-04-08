@@ -18,6 +18,7 @@ import it.cnr.isti.hpclab.parallel.SearchRequestMessage;
 public class FineGrainedManagerThread extends Thread
 {
 	protected static final Logger LOGGER = Logger.getLogger(FineGrainedManagerThread.class);
+	protected static int TASKS_QUEUE_TRESHOLD = MatchingConfiguration.getInt(Property.TASKS_QUEUE_TRESHOLD);
 	
 	// Private variables
 	private IndexOnDisk mIndex;
@@ -85,8 +86,10 @@ public class FineGrainedManagerThread extends Thread
 						
 					sResultQueue.put(new SearchRequestMessage(it.fgsrq.srq));
 					
-					synchronized(splittersLock){
-						splittersLock.notify();
+					if(sIntersectionTaskQueue.size() <= TASKS_QUEUE_TRESHOLD){
+						synchronized(splittersLock){
+							splittersLock.notify();
+						}
 					}
 				}
 			}
