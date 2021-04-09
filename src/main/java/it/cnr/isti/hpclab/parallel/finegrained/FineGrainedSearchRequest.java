@@ -76,11 +76,7 @@ public class FineGrainedSearchRequest {
 	/** Increments the counter of completed chunks and returns true if all the chunks of this search request has been processed, false otherwise */
 	public boolean isCompleted()
 	{
-		if(tasksCompleted.incrementAndGet() == numberOfTasks){
-			processingTime = System.nanoTime() - startTime;
-			return true;
-		}
-		return false;
+		return tasksCompleted.incrementAndGet() == numberOfTasks;
 	}
 	
 	public boolean isPoison()
@@ -103,6 +99,9 @@ public class FineGrainedSearchRequest {
 				heap.insert(currentTasksQ.dequeue());
 			}
 		}
+		
+		processingTime = System.nanoTime() - startTime;
+		
 		return heap;
 	}
 
