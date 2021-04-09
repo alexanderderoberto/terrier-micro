@@ -74,15 +74,13 @@ public class FineGrainedManagerThread extends Thread
 				
 				mManager.run(it);
 				
-				if(it.fgsrq.isCompleted()){
-					TopQueue heap = it.fgsrq.merge();
+				if(it.fgsrq.isCompleted(it)){
+					it.fgsrq.addStatistics(mManager.enums);
 					
-					it.fgsrq.addStatistics(mManager.enums, heap);
-					
-					if (heap.isEmpty())
+					if (it.fgsrq.heap.isEmpty())
 						it.fgsrq.srq.setResultSet(new EmptyResultSet());
 					else
-						it.fgsrq.srq.setResultSet(new ScoredResultSet(heap));
+						it.fgsrq.srq.setResultSet(new ScoredResultSet(it.fgsrq.heap));
 						
 					sResultQueue.put(new SearchRequestMessage(it.fgsrq.srq));
 					

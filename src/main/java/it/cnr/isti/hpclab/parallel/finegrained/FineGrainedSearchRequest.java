@@ -33,7 +33,9 @@ public class FineGrainedSearchRequest {
 	/** Used to insert intersection tasks into correct positions in the array */
 	private int intersectionTastPointer;
 	/** Used to detect when all chunks of the search request are ready */
-	private AtomicInteger tasksCompleted;
+	private int tasksCompleted;
+	/** Data structure containing results ordered by relevance */
+	public TopQueue heap;
 	
 	public long processingTime;
 	public long processedPostings;
@@ -49,10 +51,12 @@ public class FineGrainedSearchRequest {
 		
 		this.mIntersectionTasks = new IntersectionTask[numberOfTasks];
 		this.intersectionTastPointer = 0;
-		this.tasksCompleted = new AtomicInteger();
+		this.tasksCompleted = 0;
 		
 		this.processedPostings = 0L;
 		this.initialThreshold = parseFloat(srq.getQuery().getMetadata(RuntimeProperty.INITIAL_THRESHOLD));
+		
+		heap = new TopQueue(MatchingConfiguration.getInt(Property.TOP_K));
 	}
 	
 	public void addIntersectionTask(IntersectionTask task)
@@ -61,7 +65,7 @@ public class FineGrainedSearchRequest {
 	}
 	
 	/** Adds to the request object the statistics about its processing */
-	public void addStatistics(List<MatchingEntry> enums, TopQueue heap)
+	public void addStatistics(List<MatchingEntry> enums)
 	{
 		srq.getQuery().addMetadata(RuntimeProperty.QUERY_TERMS, Arrays.toString(enums.stream().map(x -> "\"" + x.term + "\"").collect(Collectors.toList()).toArray()));
 		srq.getQuery().addMetadata(RuntimeProperty.QUERY_LENGTH,    Integer.toString(enums.size()));
@@ -73,10 +77,18 @@ public class FineGrainedSearchRequest {
 		srq.getQuery().addMetadata(RuntimeProperty.PROCESSING_TIME,    Double.toString(processingTime/1e6));
 	}
 	
-	/** Increments the counter of completed chunks and returns true if all the chunks of this search request has been processed, false otherwise */
-	public boolean isCompleted()
+	/** Increments the counter of completed chunks, merges the results of this task into a global heap and returns true if all the chunks of this search request has been processed, false otherwise */
+	public synchronized boolean isCompleted(IntersectionTask it)
 	{
-		if(tasksCompleted.incrementAndGet() == numberOfTasks){
+		processedPostings += it.processedPostings;
+		
+		// Merge heaps
+		PriorityQueue<Result> currentTasksQ = it.heap.top();
+		while(!currentTasksQ.isEmpty()){
+			this.heap.insert(currentTasksQ.dequeue());
+		}
+		
+		if(++tasksCompleted == numberOfTasks){
 			processingTime = System.nanoTime() - startTime;
 			return true;
 		}
@@ -86,24 +98,6 @@ public class FineGrainedSearchRequest {
 	public boolean isPoison()
 	{
 		return this.srq == null;
-	}
-	
-	/** Merges the heaps of all chunks belonging to this search request into a single heap and returns it */
-	public TopQueue merge()
-	{
-		TopQueue heap = new TopQueue(MatchingConfiguration.getInt(Property.TOP_K));
-		PriorityQueue<Result> currentTasksQ;
-		for(int i=0; i<numberOfTasks; i++){
-			// Sum up the number of processed postings
-			processedPostings += mIntersectionTasks[i].processedPostings;
-			
-			// Merge heaps
-			currentTasksQ = mIntersectionTasks[i].heap.top();
-			while(!currentTasksQ.isEmpty()){
-				heap.insert(currentTasksQ.dequeue());
-			}
-		}
-		return heap;
 	}
 
 	public static float parseFloat(String s)
