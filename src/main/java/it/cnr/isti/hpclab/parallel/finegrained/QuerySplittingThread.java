@@ -97,13 +97,17 @@ public class QuerySplittingThread extends Thread {
 					break;
 				
 				// Count how many tasks we need
+				int step;
 				int numberOfTasks = mNumComputingThreads * TASKS_PER_THREAD;
-				int step = (numberOfPointers + 1) / numberOfTasks;
-				if(step > 0){
-					int remainder = (numberOfPointers + 1) % numberOfTasks;
-					numberOfTasks += remainder / step;
-					if((remainder % step) != 0)
-						numberOfTasks++;
+				if((numberOfPointers + 1) >= numberOfTasks){
+					step = (numberOfPointers + 1) / numberOfTasks;
+					if(((numberOfPointers + 1) % numberOfTasks) != 0)
+						step++;
+				}
+				else if((numberOfPointers + 1) >= mNumComputingThreads){
+					step = (numberOfPointers + 1) / mNumComputingThreads;
+					if(((numberOfPointers + 1) % mNumComputingThreads) != 0)
+						step++;
 				}
 				else{
 					numberOfTasks = numberOfPointers + 1;
