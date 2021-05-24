@@ -24,6 +24,7 @@ public class FineGrainedParallelQuerying
 {
 	private static final Logger LOGGER = Logger.getLogger(FineGrainedParallelQuerying.class);
 	protected static boolean IGNORE_LOW_IDF_TERMS = MatchingConfiguration.getBoolean(Property.IGNORE_LOW_IDF_TERMS);
+	protected static int NUM_THREADS = MatchingConfiguration.getInt(Property.NUM_THREADS);
 	
 	/** The number of matched queries. */
 	protected int mMatchingQueryCount = 0;
@@ -54,7 +55,13 @@ public class FineGrainedParallelQuerying
 		splittersLock = new Object();
 		
 		mNumSplittingThreads = 1;//Runtime.getRuntime().availableProcessors();
-		mNumComputingThreads = Runtime.getRuntime().availableProcessors();
+		
+		// Initialise workers threads
+		if(NUM_THREADS > 0)
+			mNumComputingThreads = NUM_THREADS;
+		else
+			mNumComputingThreads = Runtime.getRuntime().availableProcessors();
+			
 		mThreads = new ObjectArrayList<Thread>(mNumSplittingThreads + mNumComputingThreads + 1);
 		
 		Thread th;

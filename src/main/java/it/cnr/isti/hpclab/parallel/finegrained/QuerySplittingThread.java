@@ -67,6 +67,8 @@ public class QuerySplittingThread extends Thread {
 					break;
 				
 				LOGGER.info(super.getName() + " processing query " + m.srq.getQueryId() + " : " + m.srq.getOriginalQuery());
+				//if((m.srq.getQueryId() & 255) == 0)
+				//	System.err.println("I'm alive, processed "+m.srq.getQueryId()+" queries...");
 				
 				// Start measuring query execution time from this point
 				long startTime = System.nanoTime();

@@ -68,6 +68,7 @@ public class MatchingConfiguration
 		
 	 	TASKS_PER_THREAD     		("micro.finegrained.tasksperthread",	"1"),
 	 	TASKS_QUEUE_TRESHOLD     	("micro.finegrained.taskqueuetreshold",	"0"),
+	 	NUM_THREADS			     	("micro.finegrained.numthreads",	"0"),
 
 	 	NULL						("null", "null");
 		  
