@@ -15,24 +15,22 @@ import it.cnr.isti.hpclab.matching.structures.resultset.EmptyResultSet;
 import it.cnr.isti.hpclab.matching.structures.resultset.ScoredResultSet;
 import it.cnr.isti.hpclab.parallel.SearchRequestMessage;
 
-public class WorkerThread extends Thread {
-	protected static final Logger LOGGER = Logger.getLogger(WorkerThread.class);
-	//protected static int TASKS_QUEUE_TRESHOLD = MatchingConfiguration.getInt(Property.TASKS_QUEUE_TRESHOLD);
+public class FineGrainedManagerThread extends Thread
+{
+	protected static final Logger LOGGER = Logger.getLogger(FineGrainedManagerThread.class);
+	protected static int TASKS_QUEUE_TRESHOLD = MatchingConfiguration.getInt(Property.TASKS_QUEUE_TRESHOLD);
 	
 	// Private variables
 	private IndexOnDisk mIndex;
 	private final ChunkManager mManager;
 
 	// Shared variables
-	//protected final BlockingQueue<IntersectionTask> sIntersectionTaskQueue;
-	protected final ResourceManager resourceManager;
+	protected final BlockingQueue<IntersectionTask> sIntersectionTaskQueue;
 	protected final BlockingQueue<SearchRequestMessage> sResultQueue;
-	//protected final Object splittersLock;
+	protected final Object splittersLock;
 	
 	// Static variables
 	private static int staticId = 0;
-	
-	public final int id;
 	
 	private ChunkManager create_manager()
 	{
@@ -51,19 +49,18 @@ public class WorkerThread extends Thread {
 		}
 	}
 	
-	public WorkerThread(final ResourceManager rm, final BlockingQueue<SearchRequestMessage> res_queue)
+	public FineGrainedManagerThread(final BlockingQueue<IntersectionTask> itask_queue, final BlockingQueue<SearchRequestMessage> res_queue, Object splittersLock)
 	{
 		super.setName(this.getClass().getSimpleName() + "_" + (++staticId));
 		LOGGER.warn(super.getName() + " is going to build its own index copy");
 		
 		// shared
-		this.resourceManager = rm;
+		this.sIntersectionTaskQueue = itask_queue;
 		this.sResultQueue = res_queue;
+		this.splittersLock = splittersLock;
 		
 		// private
 		this.mManager = create_manager();
-		
-		id = staticId;
     }
 	
 	@Override
@@ -71,19 +68,9 @@ public class WorkerThread extends Thread {
 	{
 		try {
 			while (true) {
-				IntersectionTask it = resourceManager.takeTask(this);
-				
-				if(it == null) { // No more tasks in this queue, unbind
-					resourceManager.unbindThreadFromQueue(this);
-					continue;
-				}
-				
-				if (it.isPoison()) {// poison pill received, no more intersection tasks to process
-					resourceManager.unbindThreadFromQueue(this);
-					System.out.println("Final unbinding thread " + this.getName());
-					//resourceManager.print();
+				IntersectionTask it = sIntersectionTaskQueue.take();
+				if (it.isPoison()) // poison pill received, no more intersection tasks to process
 					break;
-				}
 				
 				mManager.run(it);
 				
@@ -96,10 +83,14 @@ public class WorkerThread extends Thread {
 						it.fgsrq.srq.setResultSet(new ScoredResultSet(it.fgsrq.heap));
 						
 					sResultQueue.put(new SearchRequestMessage(it.fgsrq.srq));
+					
+					if(sIntersectionTaskQueue.size() <= TASKS_QUEUE_TRESHOLD){
+						synchronized(splittersLock){
+							splittersLock.notify();
+						}
+					}
 				}
 			}
-			
-			// Thread termination
 			mManager.close();
 			mIndex.close();
 			// notify I'm done to result writer with a poison pill
