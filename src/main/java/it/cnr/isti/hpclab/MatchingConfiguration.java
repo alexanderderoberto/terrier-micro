@@ -66,9 +66,11 @@ public class MatchingConfiguration
 		
 	 	THRESHOLD_FILE     			("micro.queries.threshold",	""),
 		
-	 	TASKS_PER_THREAD     		("micro.finegrained.tasksperthread",	"1"),
-	 	TASKS_QUEUE_TRESHOLD     	("micro.finegrained.taskqueuetreshold",	"0"),
+		TASKS_QUEUE_TRESHOLD     	("micro.finegrained.taskqueuetreshold",	"0"),
+	 	TASKS_PER_THREAD     		("micro.finegrained.tasksperthread",	"10"),
 	 	NUM_THREADS			     	("micro.finegrained.numthreads",	"0"),
+		EXECUTION_TIMES_MATRIX		("micro.finegrained.etmatrix",	""),
+		QUERIES_PER_SECOND			("micro.finegrained.qps",	"0"),
 
 	 	NULL						("null", "null");
 		  

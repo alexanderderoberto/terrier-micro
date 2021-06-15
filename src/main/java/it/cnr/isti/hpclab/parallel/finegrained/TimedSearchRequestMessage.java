@@ -18,18 +18,21 @@
  *
  */
 
-package it.cnr.isti.hpclab.parallel;
+package it.cnr.isti.hpclab.parallel.finegrained;
 
 import it.cnr.isti.hpclab.matching.structures.SearchRequest;
+import it.cnr.isti.hpclab.parallel.SearchRequestMessage;
 
-public class SearchRequestMessage 
+public class TimedSearchRequestMessage extends SearchRequestMessage
 {
 	// If srq is null, this message is a "poison pill", and the thread receiving it must terminate.
-	public final SearchRequest srq;
+	/** The moment in time when the processing of this search request has begun */
+	public final long startTime;
 	
-	public SearchRequestMessage(final SearchRequest srq)
+	public TimedSearchRequestMessage(final SearchRequest srq)
 	{
-		this.srq = srq;
+		super(srq);
+		this.startTime = System.nanoTime();
 	}
 	
 	public boolean isPoison()

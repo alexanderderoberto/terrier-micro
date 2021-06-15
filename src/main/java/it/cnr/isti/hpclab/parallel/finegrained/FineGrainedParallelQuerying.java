@@ -25,6 +25,7 @@ public class FineGrainedParallelQuerying
 	private static final Logger LOGGER = Logger.getLogger(FineGrainedParallelQuerying.class);
 	protected static boolean IGNORE_LOW_IDF_TERMS = MatchingConfiguration.getBoolean(Property.IGNORE_LOW_IDF_TERMS);
 	protected static int NUM_THREADS = MatchingConfiguration.getInt(Property.NUM_THREADS);
+	protected static int QUERIES_PER_SECOND = MatchingConfiguration.getInt(Property.QUERIES_PER_SECOND);
 	
 	/** The number of matched queries. */
 	protected int mMatchingQueryCount = 0;
@@ -32,15 +33,14 @@ public class FineGrainedParallelQuerying
 	/** Data structures */
 	protected IndexOnDisk  mIndex;
 	private QuerySource  mQuerySource;
+	protected ResourceManager resourceManager;
+	private RateLimiter mRateLimiter;
 	
 	// to be shared
-	protected BlockingQueue<SearchRequestMessage> sSearchRequestQueue;
-	protected BlockingQueue<IntersectionTask> sIntersectionTaskQueue;
+	protected BlockingQueue<TimedSearchRequestMessage> sSearchRequestQueue;
 	protected BlockingQueue<SearchRequestMessage> sResultQueue;
-	protected Object splittersLock;
 	
 	// private
-	private final int mNumSplittingThreads;
 	private final int mNumComputingThreads;
 	private ObjectList<Thread> mThreads;
 	
@@ -48,13 +48,14 @@ public class FineGrainedParallelQuerying
 	{
 		mIndex = createIndex();
 		mQuerySource = createQuerySource();
+		mRateLimiter = new RateLimiter(QUERIES_PER_SECOND);
 		
-		sSearchRequestQueue = new ArrayBlockingQueue<SearchRequestMessage>(1 << 10);
-		sIntersectionTaskQueue = new LinkedBlockingQueue<IntersectionTask>(1 << 10);
+		sSearchRequestQueue = new ArrayBlockingQueue<TimedSearchRequestMessage>(1 << 10);
+		//sIntersectionTaskQueue = new LinkedBlockingQueue<IntersectionTask>(1 << 10);
 		sResultQueue = new ArrayBlockingQueue<SearchRequestMessage>(1 << 10);
-		splittersLock = new Object();
+		//splittersLock = new Object();
 		
-		mNumSplittingThreads = 1;//Runtime.getRuntime().availableProcessors();
+		//mNumSplittingThreads = 1;
 		
 		// Initialise workers threads
 		if(NUM_THREADS > 0)
@@ -62,27 +63,30 @@ public class FineGrainedParallelQuerying
 		else
 			mNumComputingThreads = Runtime.getRuntime().availableProcessors();
 			
-		mThreads = new ObjectArrayList<Thread>(mNumSplittingThreads + mNumComputingThreads + 1);
+		mThreads = new ObjectArrayList<Thread>(mNumComputingThreads + 2);//+1 querySplittingThread, +1 resultOutputThread
+		
+		resourceManager = new ResourceManager(mNumComputingThreads);
+		
+		// Create a thread to split incoming queries
+		Thread th1 = new ProducerThread(sSearchRequestQueue, resourceManager, mNumComputingThreads);
+		mThreads.add(th1);
 		
 		Thread th;
-		// Create some threads to split incoming queries
-		for (int i = 0; i < mNumSplittingThreads; i++) {
-			th = new QuerySplittingThread(sSearchRequestQueue, sIntersectionTaskQueue, splittersLock, mNumComputingThreads);
-			mThreads.add(th);
-			th.start();
-		}
-		
 		// Create some threads to process previously generated splits
 		for (int i = 0; i < mNumComputingThreads; i++) {
-			th = new FineGrainedManagerThread(sIntersectionTaskQueue, sResultQueue, splittersLock);
+			th = new WorkerThread(resourceManager, sResultQueue);
+			resourceManager.addWorkerThread(th);
 			mThreads.add(th);
 			th.start();
 		}
+
+		th1.start();//temporaneamente qui
 		
 		// Create a thread to output the result
 		th = new ResultOutputThread(sResultQueue, mNumComputingThreads);
 		mThreads.add(th);
 		th.start();
+		
 	}
 	
 	public static IndexOnDisk createIndex()
@@ -108,25 +112,25 @@ public class FineGrainedParallelQuerying
 		mQuerySource.reset();
 
 		final long startTime = System.currentTimeMillis();
-
-		// iterating through the queries
-		while (mQuerySource.hasNext()) {
-			String query = mQuerySource.next();
-			int qid   = mQuerySource.getQueryId();
-			
-			float  qth   = 0.0f;
-			if (mQuerySource instanceof ThresholdQuerySource)
-				qth = ((ThresholdQuerySource) mQuerySource).getQueryThreshold();
-			
-			processQuery(qid, query, qth);
-			mMatchingQueryCount++;
-		}
 		
-		// notify processors that queries are over with a poison pill per processor
 		try {
-			for (int i = 0; i < mNumSplittingThreads; ++i) {
-				sSearchRequestQueue.put(new SearchRequestMessage(null));
+			// iterating through the queries
+			while (mQuerySource.hasNext()) {
+				mRateLimiter.await();
+				
+				String query = mQuerySource.next();
+				int qid   = mQuerySource.getQueryId();
+				
+				float  qth   = 0.0f;
+				if (mQuerySource instanceof ThresholdQuerySource)
+					qth = ((ThresholdQuerySource) mQuerySource).getQueryThreshold();
+				
+				processQuery(qid, query, qth);
+				mMatchingQueryCount++;
 			}
+			
+			// notify splittingThread that queries are over with a poison pill
+			sSearchRequestQueue.put(new TimedSearchRequestMessage(null));
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}
@@ -142,7 +146,7 @@ public class FineGrainedParallelQuerying
 	public void processQuery(final int queryId, final String query, final float threshold) throws IOException, QueryParserException
 	{
 		try {
-			sSearchRequestQueue.put(new SearchRequestMessage(new SearchRequest(queryId, query)));
+			sSearchRequestQueue.put(new TimedSearchRequestMessage(new SearchRequest(queryId, query)));
 		} catch (InterruptedException e) {
 			e.printStackTrace();
 		}

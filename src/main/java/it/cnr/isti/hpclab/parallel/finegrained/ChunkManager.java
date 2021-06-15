@@ -118,6 +118,9 @@ public abstract class ChunkManager {
 
 	protected void close_enums() throws IOException
 	{
+		if(enums == null)
+			return;
+		
 		for (MatchingEntry pair: enums)
         	pair.posting.close();
 	}
